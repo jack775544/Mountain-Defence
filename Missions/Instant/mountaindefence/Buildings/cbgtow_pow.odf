@@ -1,0 +1,12 @@
+// No Power Cerberi Gun Tower
+
+[GameObjectClass]
+baseName = "cbgtow_pow"
+classLabel = "cbgtow"
+powerCost = 0
+
+[BuildingClass]
+
+[CraftClass]
+
+[TurretCraftClass]

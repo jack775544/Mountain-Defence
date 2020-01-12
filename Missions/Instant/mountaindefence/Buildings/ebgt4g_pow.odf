@@ -1,0 +1,12 @@
+// No Power Hadean Defender
+
+[GameObjectClass]
+baseName = "ebgt4g_pow"
+classLabel = "ebgt4g"
+powerCost = 0
+
+[BuildingClass]
+
+[CraftClass]
+
+[TurretCraftClass]
