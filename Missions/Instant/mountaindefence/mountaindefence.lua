@@ -34,7 +34,9 @@ local UNITS = {
 	Dread = "cvatank",
 	Krahanos = "evwalk",
 	HedouxLs = "evatankl",
-	Locust = "evmort"
+	Locust = "evmort",
+	Gorgon = "cvgorg",
+	HedouxFbs = "evatanks",
 }
 
 local M = {
@@ -43,6 +45,9 @@ local M = {
 	RoutineWakeTime = {},
 	RoutineActive = {},
 	MissionOver = false,
+	StrongerAttacks = false,
+	AwayFromBase = false,
+	PlayerBuildings = {},
 
 -- Floats
 
@@ -53,6 +58,7 @@ local M = {
 	PortalSouth = nil,
 	PortalEast = nil,
 	Recycler = nil,
+	Jammer = nil,
 
 -- Ints
 	TPS = 10,
@@ -145,7 +151,8 @@ end
 
 function DefineRoutine(routineID, func, activeOnStart)
 	if routineID == nil or Routines[routineID]~= nil then
-		error("DefineRoutine: duplicate or invalid routineID: "..tostring(routineID));
+		-- error("DefineRoutine: duplicate or invalid routineID: "..tostring(routineID));
+		PrintConsoleMessage("DefineRoutine: duplicate or invalid routineID: "..tostring(routineID));
 	else
 		Routines[routineID] = func;
 		M.RoutineState[routineID] = 0;
@@ -160,9 +167,9 @@ function Advance(routineID, delay)
 end
 
 function SetState(routineID, state, delay)
-	PrintConsoleMessage("SetState() " .. " " .. routineID .. " " .. state .. " " .. delay);
 	routineID = routineID or error("SetState(): invalid routineID.", 2);
 	delay = delay or 0.0;
+	PrintConsoleMessage("SetState() " .. " " .. routineID .. " " .. state .. " " .. delay);
 	M.RoutineState[routineID] = state;
 	M.RoutineWakeTime[routineID] = GetTime() + delay;
 end
@@ -194,11 +201,16 @@ end
 function InitialSetup()
 	_FECore.InitialSetup();
 
-	-- DefineRoutine(1, PortalNorthAttackRoutine, true);
-	DefineRoutine(2, PortalNorthWestAttackRoutine, true);
-	-- DefineRoutine(3, PortalWestAttackRoutine, true);
-	-- DefineRoutine(4, PortalEastAttackRoutine, true);
-	-- DefineRoutine(5, PortalSouthAttackRoutine, true);
+	DefineRoutine("North Portal", PortalNorthAttackRoutine, true);
+	DefineRoutine("North West Portal", PortalNorthWestAttackRoutine, true);
+	DefineRoutine("West Portal", PortalWestAttackRoutine, true);
+	DefineRoutine("East Portal", PortalEastAttackRoutine, true);
+	DefineRoutine("South Portal", PortalSouthAttackRoutine, true);
+
+	DefineRoutine("Main Mission Loop", MissionRoutine, true);
+	DefineRoutine("Check Rec Alive", CheckRecAlive, true);
+	DefineRoutine("Check Away From Base", CheckAwayFromBase, true);
+	DefineRoutine("Heal Buildings", HealBuildings, true);
 
 	local preloadODFs = {
 		"teleportin"
@@ -217,12 +229,12 @@ end
 
 function Start()
 
-	_FECore.Start()
+	_FECore.Start();
 
-	DefaultAllies()
+	DefaultAllies();
 	-- Defenders and Attackers are allied at start
 	Ally(5, 6);
-	SetScrap(1, 40)
+	SetScrap(1, 40);
 
 	-- Get portal handles
 	M.PortalNorth = GetHandleOrDie('portalnorth');
@@ -234,6 +246,7 @@ function Start()
 	-- Player Handles
 	M.Player = GetPlayerHandle();
 	M.Recycler = GetHandleOrDie('unnamed_ivrecy');
+	M.Jammer = GetHandleOrDie("riverjammer");
 
 	-- Handle portals ourselves
 	ClearPortalDest(M.PortalNorth, true);
@@ -260,6 +273,70 @@ function Update()
 	M.Player = GetPlayerHandle();
 end
 
+function MissionRoutine(R, STATE)
+	if STATE == 0 then
+		AddObjective("Defend the Recycler until further orders");
+		Advance(R);
+	elseif STATE == 1 then
+		Advance(R, 800);
+	elseif STATE == 2 then
+		if IsAround(M.Jammer) then
+			ClearObjectives();
+			AddObjective("There is an Excluder Jammer to the south in the river system. Destroying it will turn the Hadean defences to our side.");
+			SetObjectiveOn(M.Jammer);
+		end
+		Advance(R);
+	elseif STATE == 3 then
+		if IsAround(M.Jammer) == false then
+			ClearObjectives();
+			AddObjective("The Hadean defences are now under our control. Defend the Recycler until further orders.");
+			M.StrongerAttacks = true;
+			Ally(1,6);
+			UnAlly(5,6);
+			Advance(R);
+		end
+		Wait(R, 5);
+	elseif STATE == 4 then
+		Wait(R, 450);
+	end
+end
+
+function CheckRecAlive(R, STATE)
+	if IsAround(M.Recycler) == false then
+		FailMission(5, "MountainFailRec.txt");
+	end
+end
+
+function CheckAwayFromBase(R, STATE)
+	if Distance3DSquared(M.Recycler, M.Player) > 600 then
+		if M.AwayFromBase ~= true then
+			PrintConsoleMessage("Player away from base");
+			M.AwayFromBase = true;
+			M.PlayerBuildings = {};
+			for k, v in pairs(GetAllGameObjectHandles()) do
+				if (IsBuilding(v) or GetCfg(v) == "ibgtow") and GetTeamNum(v) == 0 then
+					M.PlayerBuildings[k] = v;
+				end
+			end
+		end
+	else
+		if M.AwayFromBase == true then
+			PrintConsoleMessage("Player close to base");
+			M.AwayFromBase = false;
+		end
+	end
+	Wait(R, 10);
+end
+
+function HealBuildings(R, STATE)
+	if M.AwayFromBase == true then
+		for k, v in pairs(M.PlayerBuildings) do
+			AddHealth(v, 200);
+		end
+	end
+	Wait(R, 5);
+end
+
 local NorthAttacks = {
 	{
 		DelayAfterAttack = 120,
@@ -271,10 +348,33 @@ local NorthAttacks = {
 	},
 	{
 		DelayAfterAttack = 70,
-		NextState = 1,
+		NextState = function()
+			if M.StrongerAttacks then
+				return 2;
+			end
+			return 1;
+		end,
 		Attackers = {
 			UNITS.Xypos,
 			UNITS.Xypos
+		}
+	},
+
+	-- Stronger Attacks
+	{
+		DelayAfterAttack = 40,
+		Attackers = {
+			UNITS.Xares,
+			UNITS.Xypos,
+		}
+	},
+	{
+		DelayAfterAttack = 60,
+		NextState = 2,
+		Attackers = {
+			UNITS.Xares,
+			UNITS.Xares,
+			UNITS.Locust
 		}
 	}
 }
@@ -301,10 +401,46 @@ local NorthWestAttacks = {
 	},
 	{
 		DelayAfterAttack = 60,
-		NextState = 1,
+		NextState = function()
+			if M.StrongerAttacks == true then
+				return 4;
+			end
+			return 1;
+		end,
 		Attackers = {
 			UNITS.Siren,
-			UNITS.Siren
+			UNITS.Triton
+		}
+	},
+	
+	-- Stronger Attacks
+	{
+		DelayAfterAttack = 90,
+		Attackers = {
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Dominator,
+		}
+	},
+	{
+		DelayAfterAttack = 80,
+		Attackers = {
+			UNITS.Drath,
+			UNITS.Triton,
+			UNITS.Krul
+		}
+	},
+	{
+		DelayAfterAttack = 60,
+		Attackers = {
+			UNITS.Demon,
+		}
+	},
+	{
+		DelayAfterAttack = 60,
+		NextState = 4,
+		Attackers = {
+			UNITS.Gorgon
 		}
 	}
 }
@@ -336,10 +472,39 @@ local WestAttacks = {
 	},
 	{
 		DelayAfterAttack = 20,
-		NextState = 1,
+		NextState = function()
+			if M.StrongerAttacks == true then
+				return 5;
+			end
+			return 1;
+		end,
 		Attackers = {
 			UNITS.Xares,
 			UNITS.Xypos
+		}
+	},
+
+	-- Stronger Attacks
+	{
+		DelayAfterAttack = 40,
+		Attackers = {
+			UNITS.Locust,
+			UNITS.Locust,
+		}
+	},
+	{
+		DelayAfterAttack = 100,
+		Attackers = {
+			UNITS.Xares,
+			UNITS.Xares,
+			UNITS.HedouxFbs,
+		}
+	},
+	{
+		DelayAfterAttack = 40,
+		NextState = 5,
+		Attackers = {
+			UNITS.Krahanos
 		}
 	}
 }
@@ -365,12 +530,37 @@ local EastAttacks = {
 	},
 	{
 		DelayAfterAttack = 40,
-		NextState = 1,
+		NextState = function()
+			if M.StrongerAttacks == true then
+				return 4;
+			end
+			return 2;
+		end,
 		Attackers = {
 			UNITS.Locust,
 			UNITS.ZeusWorm
 		}
-	}
+	},
+
+	-- Stonger Attacks
+	{
+		DelayAfterAttack = 70,
+		Attackers = {
+			UNITS.ZeusWorm,
+			UNITS.ZeusSks,
+			UNITS.Xypos
+		}
+	},
+	{
+		DelayAfterAttack = 60,
+		NextState = 4,
+		Attackers = {
+			UNITS.HedouxFbs,
+			UNITS.HedouxFbs,
+			UNITS.Xares,
+			UNITS.Locust
+		}
+	},
 }
 function PortalEastAttackRoutine(R, STATE)
 	LaunchAttacks(R, STATE, M.PortalEast, EAST_PATH, EastAttacks);
@@ -413,10 +603,53 @@ local SouthAttacks = {
 	},
 	{
 		DelayAfterAttack = 20,
-		NextState = 2,
+		NextState = function()
+			if M.StrongerAttacks == true then
+				return 7;
+			end
+			return 2;
+		end,
 		Attackers = {
 			UNITS.Talon,
 			UNITS.Talon
+		}
+	},
+
+	-- Stronger Attacks
+	{
+		DelayAfterAttack = 80,
+		Attackers = {
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Triton,
+			UNITS.Triton,
+			UNITS.Siren,
+		}
+	},
+	{
+		DelayAfterAttack = 80,
+		Attackers = {
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Krul,
+			UNITS.Dread
+		}
+	},
+	{
+		DelayAfterAttack = 60,
+		Attackers = {
+			UNITS.Talon,
+			UNITS.Talon,
+			UNITS.Talon,
+		}
+	},
+	{
+		DelayAfterAttack = 80,
+		NextState = 7,
+		Attackers = {
+			UNITS.Demon,
 		}
 	}
 }

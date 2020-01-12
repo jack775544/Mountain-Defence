@@ -64662,7 +64662,7 @@ objClass = hbport
 seqno [1] =
 dad7
 team [1] =
-85
+0
 label = portalsouth
 isUser [1] =
 false
@@ -64758,7 +64758,7 @@ objClass = hbport
 seqno [1] =
 dada
 team [1] =
-85
+0
 label = portaleast
 isUser [1] =
 false
@@ -64854,7 +64854,7 @@ objClass = hbport
 seqno [1] =
 dadb
 team [1] =
-85
+0
 label = portalnorth
 isUser [1] =
 false
@@ -64950,7 +64950,7 @@ objClass = hbport
 seqno [1] =
 dadc
 team [1] =
-85
+0
 label = portalnorthwest
 isUser [1] =
 false
@@ -65046,7 +65046,7 @@ objClass = hbport
 seqno [1] =
 dadd
 team [1] =
-85
+0
 label = portalwest
 isUser [1] =
 false
